@@ -4,6 +4,8 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import Random
+import Http
+import Json.Decode as Decode exposing (Decoder, field, succeed)
 
 
 -- MODEL
@@ -28,17 +30,8 @@ initialModel : Model
 initialModel =
     { name = "Mark"
     , gameNumber = 1
-    , entries = initialEntries
+    , entries = []
     }
-
-
-initialEntries : List Entry
-initialEntries =
-    [ Entry 1 "Stuff" 100 False
-    , Entry 2 "Things" 200 False
-    , Entry 3 "Foo" 300 False
-    , Entry 4 "Bar" 400 False
-    ]
 
 
 
@@ -49,6 +42,7 @@ type Msg
     = NewGame
     | Mark Int
     | NewRandom Int
+    | NewEntries (Result Http.Error (List Entry))
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -57,11 +51,21 @@ update msg model =
         NewRandom randomNumber ->
             ( { model | gameNumber = randomNumber }, Cmd.none )
 
+        NewEntries (Ok randomEntries) ->
+            ( { model | entries = randomEntries }, Cmd.none )
+
+        NewEntries (Err error) ->
+            let
+                _ =
+                    Debug.log "Oops!" error
+            in
+                ( model, Cmd.none )
+
         NewGame ->
             ( { model
-                | entries = initialEntries
+                | gameNumber = model.gameNumber + 1
               }
-            , generateRandomNumber
+            , getEntries
             )
 
         Mark id ->
@@ -76,7 +80,32 @@ update msg model =
 
 
 
+-- DECODERS
+
+
+entryDecoder : Decoder Entry
+entryDecoder =
+    Decode.map4 Entry
+        (field "id" Decode.int)
+        (field "phrase" Decode.string)
+        (field "points" Decode.int)
+        (succeed False)
+
+
+
 -- COMMANDS
+
+
+entriesUrl : String
+entriesUrl =
+    "http://localhost:3000/random-entries"
+
+
+getEntries : Cmd Msg
+getEntries =
+    (Decode.list entryDecoder)
+        |> Http.get entriesUrl
+        |> Http.send NewEntries
 
 
 generateRandomNumber : Cmd Msg
@@ -164,7 +193,7 @@ view model =
 main : Program Never Model Msg
 main =
     Html.program
-        { init = ( initialModel, generateRandomNumber )
+        { init = ( initialModel, getEntries )
         , view = view
         , update = update
         , subscriptions = (\_ -> Sub.none)
